@@ -1,7 +1,7 @@
 /*********************************************************************/
 /* SSHoney.c: A SSH Honeypot                                         */
 /* Name: Thomas Jordan												 */
-/* Version: 1.0											             */
+/* Version: 1.3											             */
 /*********************************************************************/
 
 #include <stdio.h>
@@ -11,15 +11,19 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h>`
+#include <netinet/in.h>
+#include <time.h>
 
-#define BUF_SIZE = (256 * 1024)    /* https://github.com/openssh/openssh-portable/blob/master/packet.c */
+#define BUF_SIZE (256 * 1024)    /* https://github.com/openssh/openssh-portable/blob/master/packet.c */
 
 /* Displays an error message to the command line */
-void FatalError(const char *Program, const char *ErrorMsg);
+void FatalError(const char *ErrorMsg);
 
 /* Prints out the available command flags */
 void PrintUsage();
+
+/* Logs server activity into a file */
+void logToFile(const char* input, int mode);
 
 int main(int argc, char *argv[]) {
     /**************************/
@@ -28,29 +32,45 @@ int main(int argc, char *argv[]) {
     int server_socket_fd, /* socket file descriptor for service */
     data_socket_fd, /* socket file descriptor for data */
     port_no; /* port number */
+    int argumentCounter = 1; /* Tracks argv */
 
     /* Check if input is valid */
-    if (argc < 2) {
+    if (argc > 4) {
         printf("Invalid input, enter -h for help\n");
         exit(0);
     }
 
     /* -h option */
-    if (strcmp(argv[1], "-h") == 0) {
+    if (strcmp(argv[argumentCounter], "-h") == 0) {
         PrintUsage();
-    }
-    /* -p option */
-   if (strcmp(argv[1], "-p") == 0) {
-        port_no = atoi(argv[2]);
-        if (port_no <= 2000) {
-            fprintf(stderr, "%s: invalid port number %d, should be greater 2000\n",
-            argv[0], port_no);
-        }
-    }
-    else {
-        printf("Invalid input, enter -h for help\n");
         exit(0);
     }
+    /* -p option */
+   if (strcmp(argv[argumentCounter], "-p") == 0) {
+        argumentCounter++; /* Go to next argument */
+        if (argumentCounter > argc) {
+            FatalError("Please specify a port number\n");
+        } /* fi */
+        port_no = atoi(argv[argumentCounter]);
+        if (port_no < 0 || port_no > 65535) { /* Sanity check port number */
+            FatalError("Invalid port number");
+        } /* fi */
+    }
+    else {
+        FatalError("Invalid input, enter -h for help");
+    }
+
+    /* -o option */
+    if (strcmp(argv[argumentCounter], "-o") == 0) {
+        argumentCounter++; /* Go to next argument */
+        logToFile("", 0);
+    }
+
+    /********************************************/
+    /* Open log file and record start of server */
+    /********************************************/
+    
+
 
     /********************************************************************/
     /* Set up socket and begin listening for connections                */
@@ -107,56 +127,53 @@ int main(int argc, char *argv[]) {
             exit(7);
         }
 
-        /* Define message behavior */
-        if (strcmp(buffer, "PRINT") == 0) {
-            memset(buffer, 0, sizeof(buffer));
-            printf("%s: Sending response: OK.\n", argv[0]);
-            char ret[] = "OK\n";
-            strcat(ret, "Available DIP Operations:\n");
-            strcat(ret, "Age Image\n");
-            strcat(ret, "Convert image to Black and White\n");
-            strcat(ret, "Make a negative of the image\n");
-            strcat(ret, "Flip the image vertically\n");
-            strcat(ret, "Mirror the iamge horizontally\n");
-            strcat(ret, "Sharpen the Image\n");
-            strcat(ret, "Exchange Red and Blue");
+        if (n > 0) {
+            printf("Activity detected on the server.\n");
 
-            write(data_socket_fd, ret, sizeof(buffer) - 1);
-        } /* fi */
-        else if (strcmp(buffer, "AUTOTEST") == 0) {
-            memset(buffer, 0, sizeof(buffer));
-            /* If AutoTest() fails, return value */
-            AutoTest();
-            printf("%s: Sending response: OK.", argv[0]);
-            char ret[] = "OK";
-            int bytes_written = write(data_socket_fd, ret, sizeof(buffer) - 1);
-            if (bytes_written < 0 ) {
-                FatalError(argv[0], "Error writing to socket");
-            }
-        } /* esle */
-        else if (strcmp(buffer, "CLOSE") == 0) {
-            memset(buffer, 0, sizeof(buffer));
-            printf("%s: Sending response: OK.", argv[0]);
-            char ret[] = "OK";
-            
-            int bytes_written = write(data_socket_fd, ret, sizeof(buffer) - 1);
-            if (bytes_written < 0 ) {
-                FatalError(argv[0], "Error writing to socket");
-            }
-
-            close(data_socket_fd);
-            running = 0;
-        } /* esle */
-        else {
-            write(data_socket_fd, "Unknown request", sizeof(buffer)-1); 
         }
 
-        if (n < 0) {
-            FatalError(argv[0], "Writing to socket failed");
-            exit(8);
-        }
     }
     close(server_socket_fd);
     return 0;
 }
+
+/* Displays an error message to the command line */
+void FatalError(const char *ErrorMsg) {
+    fprintf(stderr, "ERROR: %s\n", ErrorMsg);
+}
+
+/* Prints out the available command flags */
+void PrintUsage() {
+    printf("Usage: SSHoney -p <port_no> -o <log_file>\n");
+    printf("Options:\n");
+    printf("-p\t\t\tSpecify the server port number\n");
+    printf("-o\t\t\tSpecify the log output file\n");
+    printf("-h\t\t\tDisplay this usage information\n");
+}
+
+void logToFile(const char* input, int mode) {
+    FILE* file = fopen("log.txt", "a");  /* Appends information to file */
+
+    /* Get the current time */
+    time_t t = time(NULL);
+    struct tm *tm = localtime(&t);
+    assert(tm); /* Did this variable get created correctly */
+
+    if (mode == 0) { /* Init mode */
+        fprintf(file, "Timestamp: %s | Server started.\n", asctime(tm));
+    } /* fi */
+    if (mode == 1) { /* Logging mode */
+        if (file != NULL) {
+            fprintf(file, "Timestamp: %s | Input: %s\n", asctime(tm), input);
+            fclose(file);  /* Exit from file */
+        } /* fi */
+        else { /* Sanity check that file write succeeded */
+            FatalError("Error reading to log file.");
+        } /* esle */
+    } /* esle */
+    else { /* Check that mode was valid */
+        FatalError("Enter a valid input mode");
+    }
+}
+
 
