@@ -1,6 +1,6 @@
 # SSHoney - A SSH Honeypot 🍯 written in C
 
-A simple C based honeypot that captures a SSH connection and alerts the host that someone tried to access the server. 
+A C based honeypot that captures SSH connections and alerts the host that someone tried to access the server, and what commands they tried to run. 
 
 ## Requirements
 

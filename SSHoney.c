@@ -133,13 +133,13 @@ int main(int argc, char *argv[]) {
         if (n > 0) {
             printf("Activity detected on the server.\n");
         }
-        if (customOuput == 0) { /* if no custom output */
-            logToFile(n, "log.txt", 1);
-        } else if (customOuput == 1) { /* if custom user input */
+        if (customOuput == 1) { /* if custom user input */
             logToFile(n, logName, 1);
         }
-
-    }
+        else { /* if no custom output or output value fails */
+            logToFile(n, "log.txt", 1);
+        } /* esle */
+    } /* elihw */
     close(server_socket_fd);
     return 0;
 }
