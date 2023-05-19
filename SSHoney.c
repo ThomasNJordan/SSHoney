@@ -1,7 +1,7 @@
 /*********************************************************************/
 /* SSHoney.c: A SSH Honeypot                                         */
-/* Name: Thomas Jordan												 */
-/* Version: 1.3											             */
+/* Name: Thomas Jordan                                               */
+/* Version: 1.3                                                      */
 /*********************************************************************/
 
 #include <stdio.h>
@@ -63,14 +63,12 @@ int main(int argc, char *argv[]) {
     /* -o option */
     if (strcmp(argv[argumentCounter], "-o") == 0) {
         argumentCounter++; /* Go to next argument */
-        logToFile("", 0);
+        if (argumentCounter > argc) {
+            FatalError("Please specify a output log name");
+        } /* fi */
+        char logName[] = argv;
+        logToFile("", logName, 0);
     }
-
-    /********************************************/
-    /* Open log file and record start of server */
-    /********************************************/
-    
-
 
     /********************************************************************/
     /* Set up socket and begin listening for connections                */
