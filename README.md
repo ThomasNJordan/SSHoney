@@ -22,7 +22,9 @@ These libraries are commonly included in most C compilers and development enviro
 
 To compile the program, run: `gcc SSHoney.c -ansi -Wall -o SSHoney`    
 
-To run the program: `./SSHoney -p PORT` and replace PORT with the port you want to run the program on. By default, the program will run on port 22.   
+To change the port: type `./SSHoney -p PORT` and replace `PORT` with the port you want to run the program on. By default, the program will run on port 22.   
+
+To change the log's name: type `./SSHoney -o NAME` and replace `NAME` with the name of the log file. By default the log will be called log.txt. SSHoneypot will never overwrite log data and will append data to the log. 
 
 Run `./SSHoney -h` for help information.    
 
