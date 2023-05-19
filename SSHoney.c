@@ -23,16 +23,18 @@ void FatalError(const char *ErrorMsg);
 void PrintUsage();
 
 /* Logs server activity into a file */
-void logToFile(const char* input, int mode);
+void logToFile(const char* input, char logName[], int mode);
 
 int main(int argc, char *argv[]) {
     /**************************/
     /* Command line arguments */
     /**************************/
-    int server_socket_fd, /* socket file descriptor for service */
-    data_socket_fd, /* socket file descriptor for data */
-    port_no; /* port number */
-    int argumentCounter = 1; /* Tracks argv */
+    int server_socket_fd,       /* socket file descriptor for service */
+    data_socket_fd,             /* socket file descriptor for data */
+    port_no;                    /* port number */
+    int argumentCounter = 1;    /* tracks argv */
+    int customOuput = 0;        /* if user specifies output file */
+    char *logName;              /* log file name */
 
     /* Check if input is valid */
     if (argc > 4) {
@@ -63,10 +65,12 @@ int main(int argc, char *argv[]) {
     /* -o option */
     if (strcmp(argv[argumentCounter], "-o") == 0) {
         argumentCounter++; /* Go to next argument */
+        customOuput = 1;
         if (argumentCounter > argc) {
             FatalError("Please specify a output log name");
         } /* fi */
-        char logName[] = argv;
+        *logName = argv;
+        assert(logName); /* Check if pointer was created successfully */
         logToFile("", logName, 0);
     }
 
@@ -118,16 +122,21 @@ int main(int argc, char *argv[]) {
     /*****************************************************************/
     int running = 1;
     while (running == 1) {
+        /* Read data from packet */
         memset(buffer, 0, sizeof(buffer));
         int n = read(data_socket_fd, buffer, sizeof(buffer)-1);
         if (n < 0) {
-            fprintf(stderr, "%s: reading from data socket failed\n", argv[0]);
-            exit(7);
-        }
+            FatalError("Reading from data socket failed");
+        } /* fi */
 
+        /* Write data to log */
         if (n > 0) {
             printf("Activity detected on the server.\n");
-
+        }
+        if (customOuput == 0) { /* if no custom output */
+            logToFile(n, "log.txt", 1);
+        } else if (customOuput == 1) { /* if custom user input */
+            logToFile(n, logName, 1);
         }
 
     }
@@ -149,7 +158,7 @@ void PrintUsage() {
     printf("-h\t\t\tDisplay this usage information\n");
 }
 
-void logToFile(const char* input, int mode) {
+void logToFile(const char* input, char logName[], int mode) {
     FILE* file = fopen("log.txt", "a");  /* Appends information to file */
 
     /* Get the current time */
@@ -168,10 +177,10 @@ void logToFile(const char* input, int mode) {
         else { /* Sanity check that file write succeeded */
             FatalError("Error reading to log file.");
         } /* esle */
-    } /* esle */
+    } /* fi */
     else { /* Check that mode was valid */
         FatalError("Enter a valid input mode");
-    }
+    } /* esle */
 }
 
 
