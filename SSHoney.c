@@ -9,7 +9,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include "log.c"
+
+#include "log.h"
+#include "ssh_server.h"
 
 #define BUF_SIZE (256 * 1024)    /* https://github.com/openssh/openssh-portable/blob/master/packet.c */
 

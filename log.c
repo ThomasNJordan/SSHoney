@@ -4,13 +4,7 @@
 /* Last Modified: 5/24/2023                                          */
 /*********************************************************************/
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <time.h>
-
-/* Logs server activity into a file */
-void logToFile(const char* input, char logName[], int mode);
 
 void logToFile(const char* input, char logName[], int mode) {
     FILE* file = fopen(logName, "a");  /* Appends information to file */
