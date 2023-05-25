@@ -1,18 +1,15 @@
 /*********************************************************************/
 /* SSHoney.c: A SSH Honeypot                                         */
 /* Name: Thomas Jordan                                               */
-/* Version: 1.3                                                      */
+/* Last Modified: 5/24/2023                                          */
 /*********************************************************************/
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <assert.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <time.h>
+#include "log.c"
 
 #define BUF_SIZE (256 * 1024)    /* https://github.com/openssh/openssh-portable/blob/master/packet.c */
 
@@ -21,9 +18,6 @@ void FatalError(const char *ErrorMsg);
 
 /* Prints out the available command flags */
 void PrintUsage();
-
-/* Logs server activity into a file */
-void logToFile(const char* input, char logName[], int mode);
 
 int main(int argc, char *argv[]) {
     /**************************/
@@ -65,12 +59,10 @@ int main(int argc, char *argv[]) {
                 FatalError("Please specify a output log name");
             } /* fi */
             logName = argv[argumentCounter];
-            assert(logName); /* Check if pointer was created successfully */
             logToFile("", logName, 0);
         } /* fi */
     } /* fi */
     else {
-        printf("Reached\n");
         logToFile("", "log.txt", 0); /* Write log to log.txt */
     }
 
@@ -91,8 +83,7 @@ int main(int argc, char *argv[]) {
 
     /* create a socket */
     server_socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_socket_fd < 0)
-    {
+    if (server_socket_fd < 0) {
         fprintf(stderr, "Service socket creation failed\n");
         exit(3);
     }
@@ -126,8 +117,7 @@ int main(int argc, char *argv[]) {
     /*****************************************************************/
     /* After a successful connection, serve client requests here...  */
     /*****************************************************************/
-    int running = 1;
-    while (running == 1) {
+    while (1) { /* Same as while(true) in other languages */
         /* Read data from packet */
         memset(buffer, 0, sizeof(buffer));
         int n = read(data_socket_fd, buffer, sizeof(buffer)-1);
@@ -135,22 +125,26 @@ int main(int argc, char *argv[]) {
             FatalError("Reading from data socket failed");
         } /* fi */
 
+        if (n == 0) /* If no data, don't continue loop */
+            continue;
+
         /* Convert buffer to character array */
         buffer[sizeof(buffer) - 1] = '\0';
         char* output = (char*)malloc((n + 1) * sizeof(char));
         if (output == NULL) {
             FatalError("Memory allocation failed\n");
         }
+
         strcpy(output, buffer);
 
         /* Write data to log */
         if (n > 0) {
-            printf("Activity detected on the server.\n");
+            printf("Activity detected on the server. Recording incident in log.\n");
         }
         if (customOuput == 1) { /* if custom user input */
             logToFile(output, logName, 1);
         }
-        else { /* if no custom output or output     value fails */
+        else { /* if no custom output or if output value fails */
             logToFile(output, "log.txt", 1);
         } /* esle */
 
@@ -175,30 +169,3 @@ void PrintUsage() {
     printf("-o\t\t\tSpecify the log output file\n");
     printf("-h\t\t\tDisplay this usage information\n");
 }
-
-void logToFile(const char* input, char logName[], int mode) {
-    FILE* file = fopen("log.txt", "a");  /* Appends information to file */
-
-    /* Get the current time */
-    time_t t = time(NULL);
-    struct tm *tm = localtime(&t);
-    assert(tm); /* Did this variable get created correctly */
-
-    if (mode == 0) { /* Init mode */
-        fprintf(file, "Timestamp: %s | Server started.\n", asctime(tm));
-    } /* fi */
-    if (mode == 1) { /* Logging mode */
-        if (file != NULL) {
-            fprintf(file, "Timestamp: %s | Input: %s\n", asctime(tm), input);
-            fclose(file);  /* Exit from file */
-        } /* fi */
-        else { /* Sanity check that file write succeeded */
-            FatalError("Error reading to log file.");
-        } /* esle */
-    } /* fi */
-    else { /* Check that mode was valid */
-        FatalError("Enter a valid input mode");
-    } /* esle */
-}
-
-
