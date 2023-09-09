@@ -1,20 +1,12 @@
 # SSHoney - A SSH Honeypot 🍯 written in C
 
-A C based honeypot that captures SSH connections and alerts the host when someone tries to access the server, and what commands they try to run. 
+A C based honeypot that captures SSH connections and alerts the host and sends the admin an email when someone tries to access the server, and what commands they attempt to run. 
 
 ## Requirements
 
-To run this program, make sure you have the following libraries installed:   
-
-- stdio.h
-- stdlib.h
-- string.h
-- assert.h
-- unistd.h
-- sys/types.h
-- sys/socket.h
-- netinet/in.h
-- time.h    
+To run this program, make sure to have latest version of the C standard library, and:
+- LibCurl, install by running `apt-get install libcurl4-openssl-dev`
+- A Gmail API token, you can get one here: https://cloud.google.com/docs/authentication
 
 These libraries are commonly included in most C compilers and development environments.
 
