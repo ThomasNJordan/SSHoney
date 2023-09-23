@@ -1,6 +1,7 @@
 # SSHoney - A SSH Honeypot 🍯 written in C
+# This project is currently under development and is not functional
 
-A C based honeypot that captures SSH connections and alerts the host and sends the admin an email when someone tries to access the server, and what commands they attempt to run. 
+A C based honeypot that captures SSH connections, and can either log login attempts, or create a fake filesystem and log what commands attackers try to run. 
 
 ## Requirements
 
