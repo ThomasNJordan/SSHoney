@@ -10,9 +10,14 @@
 
 /* Handle IP collection */
 #include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 /* Geolocate IP address */
 #include <curl/curl.h> 
+
+/* handle log files */
+#include <pthread.h>
 
 #define SSH_PORT 2222
 #define LOGFILE "logins.txt"
@@ -47,7 +52,16 @@ static int auth_password_callback(ssh_session session, const char *user, const c
     FILE *logfile_handle;
     pthread_mutex_lock(&logfile_lock);
 
-    const char *ip_address = ssh_get_client_ip(session);
+    /* Get the socket file descriptor from the SSH session */
+    int sockfd = ssh_get_fd(session);
+
+    /* Use getpeername to retrieve the client's IP address */
+    struct sockaddr_in client_addr;
+    socklen_t addr_len = sizeof(client_addr);
+    getpeername(sockfd, (struct sockaddr *)&client_addr, &addr_len);
+    
+    char ip_address[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(client_addr.sin_addr), ip_address, INET_ADDRSTRLEN);
 
     if (ip_address == NULL) {
         perror("Failed to get client IP address");
