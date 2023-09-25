@@ -1,25 +1,15 @@
 # SSHoney - A SSH Honeypot 🍯 written in C
 # This project is currently under development and is not functional
 
-A C based honeypot that captures SSH connections, and can either log login attempts, or create a fake filesystem and log what commands attackers try to run. 
-
-## Requirements
-
-To run this program, make sure to have latest version of the C standard library, and:
-- LibCurl, install by running `apt-get install libcurl4-openssl-dev`
-- A Gmail API token, you can get one here: https://cloud.google.com/docs/authentication
-
-These libraries are commonly included in most C compilers and development environments.
+A C based honeypot that captures SSH connections and logs login attempts
 
 ## Usage 🐝🐝🐝
 
-To compile the program, run: `gcc SSHoney.c -ansi -Wall -o SSHoney`    
-
-To change the port: type `./SSHoney -p PORT` and replace `PORT` with the port you want to run the program on. By default, the program will run on port 22.   
-
-To change the log's name: type `./SSHoney -o NAME` and replace `NAME` with the name of the log file. By default the log will be called log.txt. SSHoneypot will never overwrite log data and will append data to the log. 
-
-Run `./SSHoney -h` for help information.    
+To run this program, run:
+```
+docker build -t ssh_server .
+docker run -it -v .:/app ssh_server
+```
 
 ## License
 
