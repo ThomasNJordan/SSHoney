@@ -47,15 +47,22 @@ static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, voi
     return realsize;
 }
 
-/* Log login attempts */
-static int auth_password_callback(ssh_session session, const char *user, const char *password, void *userdata) {
-    FILE *logfile_handle;
-    pthread_mutex_lock(&logfile_lock);
+static void *ssh_server_thread(void *arg) {
+    ssh_session session = (ssh_session)arg;
 
-    /* Get the socket file descriptor from the SSH session */
+    /* Set up fake banner */
+    /* ssh_set_banner(session, "Ubuntu 20.04 LTS"); */
+    
+    if (ssh_handle_key_exchange(session) != SSH_OK) {
+        fprintf(stderr, "Key exchange failed\n");
+        ssh_disconnect(session);
+        ssh_free(session);
+        return NULL;
+    }
+
+    pthread_mutex_lock(&logfile_lock);
     int sockfd = ssh_get_fd(session);
 
-    /* Use getpeername to retrieve the client's IP address */
     struct sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
     getpeername(sockfd, (struct sockaddr *)&client_addr, &addr_len);
@@ -63,92 +70,54 @@ static int auth_password_callback(ssh_session session, const char *user, const c
     char ip_address[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &(client_addr.sin_addr), ip_address, INET_ADDRSTRLEN);
 
-    if (ip_address == NULL) {
+    if (inet_ntop(AF_INET, &(client_addr.sin_addr), ip_address, INET_ADDRSTRLEN) == NULL) {
         perror("Failed to get client IP address");
         pthread_mutex_unlock(&logfile_lock);
-        return SSH_AUTH_ERROR;
+        return NULL;
     }
-
-    logfile_handle = fopen(LOGFILE, "a");
-    if (logfile_handle == NULL) {
-        perror("Failed to open log file");
-        pthread_mutex_unlock(&logfile_lock);
-        return SSH_AUTH_ERROR;
-    }
-
-    printf("New login from %s: %s:%s\n", ip_address, user, password);
-    fprintf(logfile_handle, "%s:%s:%s\n", ip_address, user, password);
-
-    /* Perform an HTTP GET request to retrieve additional information about */
-    /* the IP address using libcurl                                         */
-    CURL *curl;
-    CURLcode res;
-    struct MemoryStruct chunk;
-
-    chunk.memory = malloc(1);  /* Dynamically allocate memory */
-    chunk.size = 0;            /* Initialize the response data buffer */
-
-    curl = curl_easy_init();
-    if (curl) {
-        char ip_api_url[128];
-        snprintf(ip_api_url, sizeof(ip_api_url), "http://ip-api.com/json/%s", ip_address);
-
-        curl_easy_setopt(curl, CURLOPT_URL, ip_api_url);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
-
-        res = curl_easy_perform(curl);
-        if (res == CURLE_OK) {
-            printf("IP API Response:\n%s\n", chunk.memory);
-            fprintf(logfile_handle, "IP API Response:\n%s\n", chunk.memory); // Log the response
+    else {
+        FILE *logfile_handle = fopen(LOGFILE, "a");
+        if (logfile_handle == NULL) {
+            perror("Failed to open log file");
         } else {
-            fprintf(stderr, "Failed to fetch IP API data: %s\n", curl_easy_strerror(res));
-        }
+            printf("New login from %s\n", ip_address);
+            fprintf(logfile_handle, "IP: %s\n", ip_address);
 
-        curl_easy_cleanup(curl);
-        free(chunk.memory);  /* Clean up the response data buffer */
-    }
+            /* Perform an HTTP GET request to retrieve additional IP information */
+            CURL *curl;
+            CURLcode res;
+            struct MemoryStruct chunk;
 
-    fclose(logfile_handle);
+            chunk.memory = malloc(1);
+            chunk.size = 0;
+
+            curl = curl_easy_init();
+            if (curl) {
+                char ip_api_url[128];
+                snprintf(ip_api_url, sizeof(ip_api_url), "http://ip-api.com/json/%s", ip_address);
+
+                curl_easy_setopt(curl, CURLOPT_URL, ip_api_url);
+                curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+                curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+
+                res = curl_easy_perform(curl);
+                if (res == CURLE_OK) {
+                    printf("IP API Response:\n%s\n", chunk.memory);
+                    fprintf(logfile_handle, "IP API Response:\n%s\n", chunk.memory);
+                } else {
+                    fprintf(stderr, "Failed to fetch IP API data: %s\n", curl_easy_strerror(res));
+                }
+
+                curl_easy_cleanup(curl);
+                free(chunk.memory);
+                fclose(logfile_handle);
+            } /* fi */
+        } /* esle */
+    } /* esle */
+
     pthread_mutex_unlock(&logfile_lock);
 
-    return SSH_AUTH_DENIED;
-}
-
-void *handle_connection(void *data) {
-    ssh_session session = (ssh_session)data;
-    ssh_message message;
-    int auth = 0;
-
-    ssh_server_accept(session);
-
-    while (1) {
-        message = ssh_message_get(session);
-        if (message == NULL) {
-            break;
-        }
-
-        switch (ssh_message_type(message)) {
-            case SSH_REQUEST_AUTH:
-                if (ssh_message_subtype(message) == SSH_AUTH_METHOD_PASSWORD) {
-                    auth = auth_password_callback(session, ssh_message_auth_user(message), ssh_message_auth_password(message), NULL);
-                }
-                ssh_message_reply_default(message);
-                break;
-            case SSH_REQUEST_CHANNEL:
-                if (auth == SSH_AUTH_DENIED) {
-                    ssh_message_reply_default(message);
-                    break;
-                }
-                break;
-            default:
-                ssh_message_reply_default(message);
-                break;
-        }
-
-        ssh_message_free(message);
-    }
-
+    /* Reject client connection */
     ssh_disconnect(session);
     ssh_free(session);
 
@@ -157,7 +126,6 @@ void *handle_connection(void *data) {
 
 int main() {
     ssh_bind sshbind;
-    ssh_session session;
     int rc;
 
     pthread_mutex_init(&logfile_lock, NULL);
@@ -170,6 +138,8 @@ int main() {
     }
 
     rc = ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_BINDPORT_STR, "2222");
+    rc = ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_BINDADDR, "0.0.0.0"); /* delete after use */
+
     if (rc < 0) {
         fprintf(stderr, "Failed to set SSH bind options\n");
         return 1;
@@ -181,30 +151,15 @@ int main() {
         return 1;
     }
 
-    printf("SSH server listening on port %d...\n", SSH_PORT);
+    pthread_t tid;
+    pthread_create(&tid, NULL, ssh_server_thread, sshbind);
 
-    while (1) {
-        session = ssh_new();
-        if (session == NULL) {
-            fprintf(stderr, "Failed to create SSH session\n");
-            return 1;
-        }
+    // Wait for server thread to finish (you can add a termination condition)
+    pthread_join(tid, NULL);
 
-        rc = ssh_bind_accept(sshbind, session);
-        if (rc == SSH_ERROR) {
-            fprintf(stderr, "Failed to accept SSH connection\n");
-            return 1;
-        }
-
-        pthread_t thread;
-        rc = pthread_create(&thread, NULL, handle_connection, (void *)session);
-        if (rc != 0) {
-            fprintf(stderr, "Failed to create thread\n");
-            return 1;
-        }
-    }
-
+    // Cleanup
     pthread_mutex_destroy(&logfile_lock);
+    ssh_bind_free(sshbind);
 
     return 0;
 }
