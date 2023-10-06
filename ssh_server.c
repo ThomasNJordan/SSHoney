@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 /* Handle SSH */
 #include <libssh/libssh.h>
@@ -21,6 +22,11 @@
 
 #define SSH_PORT 2222
 #define LOGFILE "logins.txt"
+
+/* Function to print an error message with the given prefix */
+void print_error(const char *prefix) {
+    fprintf(stderr, "%s: %s\n", prefix, strerror(errno));
+}
 
 pthread_mutex_t logfile_lock;
 
@@ -138,7 +144,8 @@ int main() {
     }
 
     rc = ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_BINDPORT_STR, "2222");
-    rc = ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_BINDADDR, "0.0.0.0"); /* delete after use */
+    /* rc = ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_BINDADDR, "0.0.0.0"); */ 
+    /* delete after use */
 
     if (rc < 0) {
         fprintf(stderr, "Failed to set SSH bind options\n");
@@ -154,10 +161,10 @@ int main() {
     pthread_t tid;
     pthread_create(&tid, NULL, ssh_server_thread, sshbind);
 
-    // Wait for server thread to finish (you can add a termination condition)
+    /* Wait for server thread to finish (you can add a termination condition) */
     pthread_join(tid, NULL);
 
-    // Cleanup
+    /* Cleanup */
     pthread_mutex_destroy(&logfile_lock);
     ssh_bind_free(sshbind);
 
