@@ -17,6 +17,7 @@
 #include <netinet/in.h>
 
 /* Geolocate IP address */
+#include <json-c/json.h>
 #include <curl/curl.h>
 
 /* Handle threads */
@@ -37,8 +38,8 @@ static ssh_bind sshbind;
 
 /* Custom Definitions */
 #define DEBUG 0
-
 #define MAXBUF 100
+char curl_response_data[4096]; /* Declare a buffer to store the cURL response data */
 
 struct connection {
     ssh_session session;
@@ -52,24 +53,70 @@ struct connection {
 int handle_auth(ssh_session session);
 
 /* Write IP Geo data */
-/*
-static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp) {
-    size_t realsize = size * nmemb;
-    struct MemoryStruct *mem = (struct MemoryStruct *)userp;
+/* Function to perform geolocation using the ip-api.com API and log data in JSON format */
+static void geolocate_ip_and_log(struct connection *c) {
+    CURL *curl;
+    CURLcode res;
+    char url[100];
 
-    char *ptr = realloc(mem->memory, mem->size + realsize);
-    if (ptr == NULL) {
-        return 0;  
+    /* Create the API URL */
+    snprintf(url, sizeof(url), "http://ip-api.com/json/%s", c->client_ip);
+
+    /* Initialize libcurl */
+    curl = curl_easy_init();
+    if (curl) {
+        curl_easy_setopt(curl, CURLOPT_URL, url);
+
+        /* Set a callback function to receive the HTTP response */
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, NULL);
+
+        /* Set the buffer to receive the response data */
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, curl_response_data);
+
+        /* Perform the HTTP request */
+        res = curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+        if (res != CURLE_OK) {
+            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+        }
+
+        /* Cleanup libcurl */
+        curl_easy_cleanup(curl);
     }
 
-    mem->memory = ptr;
-    memcpy(&(mem->memory[mem->size]), contents, realsize);
-    mem->size += realsize;
+    printf("%s", curl_response_data);
 
-    return realsize;
-} */
+    /* Parse the JSON response and create a JSON object */
+    struct json_object *json_obj = json_tokener_parse(curl_response_data);
+    
+    /* Create a JSON object to store log data */
+    struct json_object *log_data = json_object_new_object();
+    json_object_object_add(log_data, "time", json_object_new_string(c->con_time));
+    json_object_object_add(log_data, "ip", json_object_new_string(c->client_ip));
+    json_object_object_add(log_data, "user", json_object_new_string(c->user));
+    json_object_object_add(log_data, "pass", json_object_new_string(c->pass));
+    
+    /* Add geolocation data to the log_data object (use data from json_obj) */
+    printf("Reached\n");
+    printf("%s", curl_response_data);
+    json_object_object_add(log_data, "Location", json_object_new_string(json_object_get_string(json_object_object_get(json_obj, "country"))));
+    printf("Reached\n");
 
-/* Stores the client's IP address in the connection sruct. */
+    /* Convert the log_data JSON object to a string */
+    const char *log_data_str = json_object_to_json_string(log_data);
+    
+    /* Write the log_data to the JSON file */
+    FILE *json_file = fopen("log.json", "a+");
+    if (json_file) {
+        fprintf(json_file, "%s\n", log_data_str);
+        fclose(json_file);
+    }
+    
+    /* Free JSON objects */
+    json_object_put(log_data);
+    json_object_put(json_obj);
+}
+
+/* Stores the client's IP address in the connection struct and performs geolocation. */
 static int *get_client_ip(struct connection *c) {
     struct sockaddr_storage tmp;
     struct sockaddr_in *sock;
@@ -78,6 +125,9 @@ static int *get_client_ip(struct connection *c) {
     getpeername(ssh_get_fd(c->session), (struct sockaddr*)&tmp, &len);
     sock = (struct sockaddr_in *)&tmp;
     inet_ntop(AF_INET, &sock->sin_addr, c->client_ip, len);
+
+    /* Perform geolocation based on the client's IP address and log data in JSON format */
+    geolocate_ip_and_log(c);
 
     return 0;
 }
@@ -95,6 +145,11 @@ static int log_attempt(struct connection *c) {
     FILE *f;
     int r;
 
+    const char *user = ssh_message_auth_user(c->message);
+    const char *pass = ssh_message_auth_password(c->message);
+    c->user = (char *)user;
+    c->pass = (char *)pass;
+
     if ((f = fopen(LOGFILE, "a+")) == NULL) {
         fprintf(stderr, "Unable to open %s\n", LOGFILE);
         return -1;
@@ -110,14 +165,7 @@ static int log_attempt(struct connection *c) {
         return -1;
     }
 
-    const char *user = ssh_message_auth_user(c->message);
-    const char *pass = ssh_message_auth_password(c->message);
-    c->user = (char *)user;
-    c->pass = (char *)pass;
-
-    if (DEBUG) { 
-        printf("%s %s %s %s\n", c->con_time, c->client_ip, c->user, c->pass); 
-    }
+    printf("Login attempt: %s %s %s %s\n", c->con_time, c->client_ip, c->user, c->pass); 
     r = fprintf(f, "%s\t%s\t%s\t%s\t\n", c->con_time, c->client_ip, c->user, c->pass);
     fclose(f);
     return r;
@@ -131,11 +179,7 @@ static int cleanup_child_processes(void) {
     int pid;
     
     /* Wait for and reap child processes */
-    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        if (DEBUG) {
-            printf("Process %d reaped\n", pid);
-        }
-    }
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {}
 
     /* Re-install the signal handler for the next child */
     signal(SIGCHLD, (void (*)())cleanup_child_processes);
@@ -209,13 +253,16 @@ int main() {
     }
     if (DEBUG) { printf("Listening on port %d.\n", port); }
 
+    printf("Starting SSHoney... 🍯\n");
+    printf("Listening for connections...\n");
+
     /* Loop forever, waiting for and handling connection attempts. */
     while (1) {
         if (ssh_bind_accept(sshbind, session) == SSH_ERROR) {
             fprintf(stderr, "Error accepting a connection: `%s'.\n",ssh_get_error(sshbind));
             return -1;
         }
-        if (DEBUG) { printf("Accepted a connection.\n"); }
+        printf("Accepted a connection.\n");
 
         switch (fork())  {
             case -1:
