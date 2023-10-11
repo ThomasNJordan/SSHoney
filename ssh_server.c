@@ -28,7 +28,7 @@
 #define LISTENADDRESS   "0.0.0.0"
 #define PORT            2222
 #define RSA_KEYFILE     "/Users/Thomas/Documents/SSHoney/keys/id_rsa"
-#define LOGFILE         "/Users/Thomas/Documents/SSHoney/log.txt"
+#define LOGFILE         "/Users/Thomas/Documents/SSHoney/log.json"
 
 pthread_mutex_t logfile_lock;
 
@@ -48,45 +48,64 @@ struct connection {
     char con_time[MAXBUF];
     char *user;
     char *pass;
+    const char *ipGeo;
 };
 
 int handle_auth(ssh_session session);
 
+/* Callback function to handle the received data */
+size_t write_callback_func(void *buffer, size_t size, size_t nmemb, void *userp) {
+    char **response_ptr = (char **)userp;
+
+    /* Calculate the total size of the data */
+    size_t total_size = size * nmemb;
+
+    /* Allocate memory for the response and copy the data */
+    *response_ptr = (char *)malloc(total_size + 1);  // +1 for null-terminator
+    if (*response_ptr) {
+        strncpy(*response_ptr, (char *)buffer, total_size);
+        (*response_ptr)[total_size] = '\0';  // Null-terminate the response
+    }
+
+    return total_size;
+}
+
 /* Write IP Geo data */
 /* Function to perform geolocation using the ip-api.com API and log data in JSON format */
 static void geolocate_ip_and_log(struct connection *c) {
-    CURL *curl;
-    CURLcode res;
-    char url[100];
+    char url[100]; /* Character buffer for URL string */
+    char *response = NULL;  /* pointer to curl response (JSON) */
 
     /* Create the API URL */
     snprintf(url, sizeof(url), "http://ip-api.com/json/%s", c->client_ip);
 
     /* Initialize libcurl */
-    curl = curl_easy_init();
+    CURL *curl = curl_easy_init();
     if (curl) {
         curl_easy_setopt(curl, CURLOPT_URL, url);
 
-        /* Set a callback function to receive the HTTP response */
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, NULL);
+        // Set the callback function to handle the received data
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback_func);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
 
-        /* Set the buffer to receive the response data */
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, curl_response_data);
-
-        /* Perform the HTTP request */
-        res = curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+        // Perform the HTTP request
+        CURLcode res = curl_easy_perform(curl);
         if (res != CURLE_OK) {
             fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+        } else {
+            // Response is now stored in the 'response' variable
+            if (!response) {
+                fprintf(stderr, "No response data received.\n");
+            }
         }
 
-        /* Cleanup libcurl */
+        // Cleanup libcurl
         curl_easy_cleanup(curl);
     }
 
-    printf("%s", curl_response_data);
-
     /* Parse the JSON response and create a JSON object */
-    struct json_object *json_obj = json_tokener_parse(curl_response_data);
+    struct json_object *json_obj = json_tokener_parse(response);
+    free(response);  // Free allocated memory for curl response data
     
     /* Create a JSON object to store log data */
     struct json_object *log_data = json_object_new_object();
@@ -94,18 +113,16 @@ static void geolocate_ip_and_log(struct connection *c) {
     json_object_object_add(log_data, "ip", json_object_new_string(c->client_ip));
     json_object_object_add(log_data, "user", json_object_new_string(c->user));
     json_object_object_add(log_data, "pass", json_object_new_string(c->pass));
-    
+
     /* Add geolocation data to the log_data object (use data from json_obj) */
-    printf("Reached\n");
-    printf("%s", curl_response_data);
-    json_object_object_add(log_data, "Location", json_object_new_string(json_object_get_string(json_object_object_get(json_obj, "country"))));
-    printf("Reached\n");
+    c->ipGeo = json_object_to_json_string(json_obj);
+    json_object_object_add(log_data, "ipGeo", json_object_new_string(c->ipGeo));
 
     /* Convert the log_data JSON object to a string */
     const char *log_data_str = json_object_to_json_string(log_data);
     
     /* Write the log_data to the JSON file */
-    FILE *json_file = fopen("log.json", "a+");
+    FILE *json_file = fopen(LOGFILE, "a+");
     if (json_file) {
         fprintf(json_file, "%s\n", log_data_str);
         fclose(json_file);
@@ -142,18 +159,10 @@ static int get_utc(struct connection *c) {
 /* Write interesting information about a connection attempt to  LOGFILE. 
  * Returns -1 on error. */
 static int log_attempt(struct connection *c) {
-    FILE *f;
-    int r;
-
     const char *user = ssh_message_auth_user(c->message);
-    const char *pass = ssh_message_auth_password(c->message);
+    const char *pass = ssh_message_auth_password(c->message); // TODO: Implement with callback instead
     c->user = (char *)user;
     c->pass = (char *)pass;
-
-    if ((f = fopen(LOGFILE, "a+")) == NULL) {
-        fprintf(stderr, "Unable to open %s\n", LOGFILE);
-        return -1;
-    }
 
     if (get_utc(c) <= 0) {
         fprintf(stderr, "Error getting time\n");
@@ -165,10 +174,7 @@ static int log_attempt(struct connection *c) {
         return -1;
     }
 
-    printf("Login attempt: %s %s %s %s\n", c->con_time, c->client_ip, c->user, c->pass); 
-    r = fprintf(f, "%s\t%s\t%s\t%s\t\n", c->con_time, c->client_ip, c->user, c->pass);
-    fclose(f);
-    return r;
+    return 0;
 }
 
 
