@@ -1,15 +1,17 @@
 # SSHoney - A SSH Honeypot 🍯 written in C
-# This project is currently under development and is not functional
 
 A C based honeypot that captures SSH connections and logs login attempts
 
 ## Usage 🐝🐝🐝
 
-To run this program, run:
+This program is not finished yet! Will be dockerized in the next release.
+
+To start this program, run:
 ```
-docker build -t ssh_server .
-docker run -it -v .:/app ssh_server
+gcc ssh_server.c -Wall -lssh -lcurl -ljson-c -w -o sshoney && ./sshoney
 ```
+
+This program runs by default on port 2222, change this in the code by modifying the `PORT` variable. 
 
 ## License
 
