@@ -1,36 +1,24 @@
-/* Handle networking and I/O */
+/* Handle I/O */
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <errno.h>
-#include <getopt.h>
 
 /* Handle SSH */
 #include <libssh/libssh.h>
 #include <libssh/server.h>
-#include <time.h>
-
-/* Handle IP collection */
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
 
 /* Geolocate IP address */
 #include <json-c/json.h>
 #include <curl/curl.h>
+#include <time.h>
 
-/* Handle threads */
-#include <pthread.h>
-#include <sys/wait.h>
+/* Handle networking */
+#include <arpa/inet.h>
 
 /* Log output file */
 #define LISTENADDRESS   "0.0.0.0"
 #define PORT            2222
 #define RSA_KEYFILE     "/Users/Thomas/Documents/SSHoney/keys/id_rsa"
 #define LOGFILE         "/Users/Thomas/Documents/SSHoney/log.json"
-
-pthread_mutex_t logfile_lock;
 
 /* SSH Session Info */
 static ssh_session session;
@@ -156,8 +144,7 @@ static int get_utc(struct connection *c) {
     return strftime(c->con_time, MAXBUF, "%Y-%m-%d %H:%M:%S", gmtime(&t));
 }
 
-/* Write interesting information about a connection attempt to  LOGFILE. 
- * Returns -1 on error. */
+/* Write information about a connection attempt to LOGFILE. */
 static int log_attempt(struct connection *c) {
     const char *user = ssh_message_auth_user(c->message);
     const char *pass = ssh_message_auth_password(c->message); // TODO: Implement with callback instead
@@ -177,9 +164,8 @@ static int log_attempt(struct connection *c) {
     return 0;
 }
 
-
 /* Signal handler for cleaning up after child processes.
- * We handle cleanup at SIGCHLD to handle multiple simultaneous connections. */
+ * Handle cleanup at SIGCHLD to handle multiple simultaneous connections. */
 static int cleanup_child_processes(void) {
     int status;
     int pid;
@@ -201,7 +187,7 @@ static void handle_sigint(void) {
     exit(0);
 }
 
-/* Logs password auth attempts. Always replies with SSH_MESSAGE_USERAUTH_FAILURE. */
+/* Handles password auth attempts. Always replies with SSH_MESSAGE_USERAUTH_FAILURE. */
 int handle_auth(ssh_session session) {
     struct connection con;
     con.session = session;
